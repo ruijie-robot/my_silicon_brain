@@ -48,7 +48,7 @@
 **行业变革潜力：**
 根据麦肯锡的研究，对于一个平均的资产管理公司，AI、生成式AI和现在的Agentic AI的潜在影响可能是变革性的，相当于其成本基础的25-40%。例如，一个管理规模为5000亿美元的中型资产管理公司可以通过端到端工作流程重新设计实现的AI机会获得总成本基础的25-40%的效率提升^[13]。
 
-### 1.4 学习能力缺失：GenAI鸿沟的核心
+### 1.4 学习能力缺失
 
 MIT研究指出，阻碍组织跨越GenAI鸿沟的主要因素是学习缺口^[1]。现有AI工具的根本局限性包括：
 
@@ -78,7 +78,7 @@ BlackRock作为管理资产规模达12.5万亿美元的全球最大资产管理�
 #### 2.1.1 股票投资分析
 
 **行业采用现状：**
-最新调查显示，超过90%的资产管理公司已经在使用包括AI、大数据和区块链在内的颇覆性技术工具来增强投资绩效^[13]。AI在资产管理领域预计在2025年至2032年以CAGR 26.92%的速度增长^[13]。Fidelity则专注于Agentic AI投资机会，其投资组合经理Priyanshu Bakshi认为Agentic AI有潜力通过独立执行任务和适应变化环境来提升生产力、创新和洞察力^[8]。
+最新调查显示，超过90%的资产管理公司已经在使用包括AI、大数据和区块链在内的颇覆性技术工具来增强投资绩效^[13]。AI在资产管理领域预计在2025年至2032年以CAGR 26.92%的速度增长^[13]。
 
 <!-- 
 **DCF建模自动化**
@@ -90,8 +90,6 @@ Goldman Sachs Asset Management通过其量化投资策略(QIS)团队的经验，
 强调需要全面的数据获取和处理策略，以产生有意义的洞察^[9]。
 
 
-JPMorgan Asset Management在其JTEK基金中将AI作为主要主题，
-专注于识别与当前AI基础设施建设相关的投资组合持仓^[10]。
 ```
 -->
 
@@ -154,7 +152,6 @@ LLM能够快速自动化构建包括DCF（现金流折现）、PEG（市盈率�
 ```
 
 **板块轮动分析**
-> 结合BlackRock对AI作为五大结构性力量之一的认知^[3]以及Fidelity对跨行业AI投资追踪的经验^[8]，AI系统可以：
 - 分析板块估值相对于历史平均值的水平
 - 评估板块增长预期与历史常态的对比
 - 识别经济周期定位和风险回报比
@@ -180,7 +177,7 @@ LLM能够快速自动化构建包括DCF（现金流折现）、PEG（市盈率�
 
 <!--
 **私人债务投资**
-BlackRock的AI基础设施合作伙伴关系(AIP)显示了其在AI基础设施投资的承诺^[3]。JPMorgan Asset Management识别出私募市场中的重大机会，认为"服务即软件"代表3-5万亿美元的机会，而私募市场资产是投资者获得这一机会的关键工具^[10]。在私人债务领域：
+BlackRock的AI基础设施合作伙伴关系(AIP)显示了其在AI基础设施投资的承诺^[3]。在私人债务领域：
 
 - 信用风险评估自动化
 - 贷款组合优化
@@ -274,7 +271,7 @@ State Street与第三方AI分析服务商合作，运用大语言模型自动研
 在2025年5月，Vanguard推出了其首个面向客户的生成式AI功能，为其广泛的投资顾问网络提供个性化客户沟通内容^[13]。相比之下，
 
 **客户服务自动化**
-根据MIT研究，客户服务是AI显示显著影响的领域之一^[1]。T. Rowe Price通过与OpenAI CFO Sarah Friar的对话探讨AI的影响，展示了其对AI技术发展的深度关注^[11]。根据行业调查，客户入职、营销和投资运营是首要的AI应用场景^[13]：
+根据MIT研究，客户服务是AI显示显著影响的领域之一^[1]。根据行业调查，客户入职、营销和投资运营是首要的AI应用场景^[13]：
 - 智能客户查询路由
 - AI驱动的聊天机器人
 - 个性化投资建议生成
@@ -290,7 +287,7 @@ State Street与第三方AI分析服务商合作，运用大语言模型自动研
 
 #### 2.4.1 人机结合自动化交易
 
-BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3]以及Goldman Sachs对科技周期下一阶段的积极管理重点^[9]为交易自动化提供了框架。Fidelity强调Meta Platforms和Alphabet作为Agentic AI领域的领先创新者，代表其基金净资产的42%^[8]：
+BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3]以及Goldman Sachs对科技周期下一阶段的积极管理重点^[9]为交易自动化提供了框架。
 
 **算法交易增强**
 - 市场微观结构分析
@@ -311,7 +308,7 @@ BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3
 
 ### 3.1 数据清洗与标准化
 
-在构建AI Agent生态系统的过程中，数据质量是基础。根据MIT研究，成功的AI实施需要解决数据整合问题^[1]：
+在构建AI Agent生态系统的过程中，数据质量是基础。根据MIT研究，成功的AI实施需要解决数据整合问题^[1]。高质量数据是不可或缺的基石^[Ruijie:12]
 
 **财报自动转换**
 ```
@@ -395,49 +392,15 @@ BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3
 - 从历史决策中学习
 - 提供越来越精准的支持
 
-### 3.4 协议集成与未来发展
 
-#### 3.4.1 MCP、A2A、NANDA的整合应用
+> 随着各种平台和工具的快速迭代，需要维护住某个架构并不容易，想在架构和工具使用上一劳永逸，会非常困难
 
-根据最新的协议发展^[4]，公募基金公司应该采用分层的协议架构：
-
-**第一层：MCP (Model Context Protocol)**
-- 处理Agent与工具的交互
-- 管理外部数据源连接
-- 提供上下文感知能力
-
-**第二层：A2A (Agent-to-Agent Protocol)**
-- 实现Agent间的直接协作
-- 支持复杂的多Agent工作流
-- 确保跨平台互操作性
-
-**第三层：NANDA (Networked Agents and Decentralized Architecture)**
-- 提供分布式Agent网络的治理框架
-- 支持动态Agent发现和协调
-- 实现真正的去中心化多Agent系统
-
-#### 3.4.2 实施路径建议
-
-**阶段一：基础设施搭建（6-12个月）**
-1. 数据标准化和清洗系统建立
-2. 基础Tools开发和测试
-3. MCP协议集成
-
-**阶段二：Agent部署（12-18个月）**
-1. 个人Assistant Agent试点
-2. 特定业务流程Agent开发
-3. A2A协议实施
-
-**阶段三：生态系统完善（18-24个月）**
-1. 企业级复杂Agent系统
-2. NANDA架构集成
-3. 跨机构Agent协作网络
-
+<!-- 
 ### 3.5 成功实施的关键要素
 
 基于MIT研究的最佳实践^[1]以及全球领先基金公司的经验：
 
-<!-- 
+
 #### 3.5.1 组织设计
 
 **外部合作优于内部开发**
@@ -451,23 +414,22 @@ BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3
 - 避免过度集中化的AI职能部门
 -->
 
-#### 3.5.2 技术选择
-
-**优先选择学习型系统**
-根据研究，66%的高管希望AI系统能够从反馈中学习^[1]。Vanguard与多伦多大学计算机科学系建立战略AI研究合作伙伴关系，旨在增强AI研究和创新^[7]。Goldman Sachs强调需要熟练的数据科学家团队以及全面的数据战略^[9]：
-- 选择具备持久记忆的平台
-- 优先考虑可定制化的解决方案
-- 确保系统能够适应业务流程变化
-- 尽可能的利用外部工具，不重复制造
 
 
 ## Section 4: References
+
+> 记得去openAI， Anthropic和Hugging Face上找一下金融相关的东西
 
 [1] MIT NANDA Team. (2025). "The GenAI Divide: STATE OF AI IN BUSINESS 2025." MIT NANDA Project.
 
 [2] "Using LLM for stock valuation analysis." Investment Analysis Guide.
 
 [3] BlackRock. (2025). "How AI is Transforming Investing | BlackRock AI Strategy." BlackRock Investment Institute. Retrieved from https://www.blackrock.com/us/individual/insights/ai-investing
+> 可以关注一下这个channel：https://www.youtube.com/@FundamentEdge/search?query=AI
+> 这个文章显示了BlackRock Systematic的准确程度要高于GPT-4o
+
+> 当某个话题吸引市场关注时——例如向远程办公环境的快速转变或突破性创新的发布——投资者通常会构建定制的证券投资组合，这个过程可能是手动且耗时的，或者利用现> 有的经纪商提供的投资组合，但这些组合可能缺乏透明度和广度。这些挑战促使我们设计了一个快速灵活的程序来构建股票投资组合，我们称之为"主题机器人"。这个"机> 器人"使我们能够将LLM的力量与我们专有数据相结合，借助一个简化的工具来构建多空或纯多头股票投资组合。
+
 
 [4] Google Developers Blog. (2025). "Announcing the Agent2Agent Protocol (A2A) - A new era of agent interoperability." Retrieved from https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/
 
@@ -475,24 +437,50 @@ BlackRock对AI的两阶段投资方法（基础设施建设和应用采纳）^[3
 
 [6] MIT Alumni Association. (2025). "Deep Dive into the NANDA-MCP architecture for 'Internet of AI'." Retrieved from https://alumcommunity.mit.edu/events/125454
 
+<!-- 
 [7] Vanguard. (2025). "Investing in the age of AI | Vanguard Strategic AI Research Partnership." Retrieved from https://corporate.vanguard.com/content/corporatesite/us/en/corp/articles/better-vantage-episode-one.html
+> 这是一个访谈节目，只是泛泛的提出了AI怎么发展
+-->
 
+<!-- 
 [8] Fidelity Investments. (2025). "Investing for the next stage of artificial intelligence: Agentic AI." Retrieved from https://www.fidelity.com/learning-center/trading-investing/priyanshu-bakshi-ai
+> 这也只是谈AI行业看法，说应该买meta和谷歌
+--> 
+
 
 [9] Goldman Sachs Asset Management. (2025). "Harnessing the Power of Artificial Intelligence to Enhance Investment Decision-Making." Retrieved from https://am.gs.com/en-us/advisors/insights/article/2024/harnessing-the-power-of-ai-to-enhance-investment-decision-making
 
+<!-- 
 [10] JPMorgan Asset Management. (2025). "AI investment trends 2025: Beyond the bubble | JTEK Strategy." Retrieved from https://am.jpmorgan.com/lu/en/asset-management/institutional/insights/market-insights/investment-outlook/ai-investment/
+> 这篇文章是推荐ETF的
+-->
 
+<!-- 
 [11] T. Rowe Price. (2025). "Investment implications of generative artificial intelligence | AI Tech Stack Growth." Retrieved from https://www.troweprice.com/financial-intermediary/at/en/thinking/articles/2024/q1/investment-implications-of-generative-ai.html
+> 找不到这篇文章
+-->
 
 [12] State Street Global Advisors. (2025). "AI and the future of intelligent investing | SPDR ETF AI Strategy." Retrieved from https://www.statestreet.com/alpha/insights/artificial-intelligence-investing
+> 当前AI应用可分为六大类型：
+> 生成式AI聊天机器人：为前端服务团队与理财顾问提供精准知识支持，提升客户互动质效；协助中台运营专家实现常规交易对账自动化，使其专注需人工干预的复杂交易
+> 智能投研助手：投资经理、交易员与分析师可通过自然语言对话，实时查询投资组合、交易执行及对手方风险敞口
+> 数据治理应用：精准检测关键财务数据异常，自动上报可疑记录供分析师核验修正
+> 非结构化数据解析：通过处理文档、报表等多元数据，辅助投资组合构建，标记反洗钱/客户尽调可疑交易，完成私募股权等另类资产估值与现金流分析
+> 智能编程助手：帮助开发者自动生成代码，使其聚焦算法创新
+> 图像识别与可视化：对冲基金运用图表模式识别生成交易信号；AI算法自动生成投资业绩、风险敞口等组合分析的可视化洞察
+
+> 自动归类行业，而不是手动分类GICS
+> 和FundGuard合作，智能会计系统，自动价格校验，实时因子分析
+> Alpha数据平台采用持续学习神经网络，跨参考数据、定价公司行动等多数据域检测异常。传统规则验证在半年内标记31,000例数据异常（仅250例真实异常），而神经网络AI仅标记4,000例却实现100%真实异常捕获——误报大幅减少使专家核查工作量显著降低。
+> 道富私募市场平台运用自然语言处理技术解析电子表格、电话记录及募资说明书中的非结构化数据，帮助另类资产管理人加速决策，先于竞争对手把握投资机遇，大幅精简原本需要大量分析师的手动流程。
+> 查尔斯河流动性提供商LTX推出的BondGPT应用，基于GPT技术结合债券流动性数据，为机构交易员提供单个证券、行业公司及市场交易的智能问答服务，助力快速获取精准的债券市场洞察。
 
 [13] AlphaSense. (2025). "AI in Asset Management: Key Trends and Outlook for 2025." Retrieved from https://www.alpha-sense.com/blog/trends/ai-in-asset-management/
+> 富道
 
 [14] McKinsey & Company. (2025). "How AI could reshape the economics of the asset management industry." Retrieved from https://www.mckinsey.com/industries/financial-services/our-insights/how-ai-could-reshape-the-economics-of-the-asset-management-industry
-
----
-
-**关于作者**：本综述基于MIT NANDA项目的最新研究成果，结合BlackRock、Vanguard、Fidelity、Goldman Sachs Asset Management、JPMorgan Asset Management、T. Rowe Price、State Street Global Advisors等全球领先资产管理公司的AI实践，为公募基金行业提供具有实操价值的AI Agent应用指南。
-
-**免责声明**：本文中表达的观点仅代表作者观点，不反映任何关联雇主的立场。所有公司特定数据和引用均已匿名化，以符合企业披露政策和保密协议。
+> 这是alphaSense的几个使用例子
+> 新加坡YH2资本管理公司运用AlphaSense打通内部情报闭环
+> ODDO BHF借助平台消除信息盲区与过载困扰
+> 精品财富管理机构Summitry LLC通过专家洞察功能获取差异化观点并提升效率
+> 全球顶尖资产管理机构中80%选择信赖AlphaSense获取竞争优势。
