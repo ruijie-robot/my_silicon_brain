@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""
+投资研究支持系统演示脚本
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent / "src"))
+
+from knowledge_base import KnowledgeBase
+from local_llm_config import LocalLLMConfig
+
+
+async def demo_knowledge_base():
+    """演示知识库功能"""
+    print("\n=== 知识库功能演示 ===")
+    
+    kb = KnowledgeBase()
+    
+    # 扫描documents目录
+    documents_dir = "documents"
+    if Path(documents_dir).exists():
+        print(f"📁 扫描目录: {documents_dir}")
+        kb.scan_directory(documents_dir)
+    else:
+        print(f"⚠️  目录 {documents_dir} 不存在，创建示例文档...")
+        Path(documents_dir).mkdir(exist_ok=True)
+        
+        # 创建示例文档
+        sample_content = """
+# 投资策略分析
+
+## 价值投资原则
+1. 寻找低估值的优质公司
+2. 长期持有，避免频繁交易
+3. 关注公司基本面和财务状况
+4. 分散投资，降低风险
+
+## 技术分析要点
+- 趋势线分析
+- 支撑位和阻力位
+- 成交量配合
+- 移动平均线系统
+
+## 风险管理
+- 设置止损位
+- 仓位控制
+- 分批建仓
+- 及时止盈
+"""
+        
+        sample_file = Path(documents_dir) / "投资策略.md"
+        sample_file.write_text(sample_content, encoding="utf-8")
+        print("✅ 创建示例文档")
+        
+        kb.add_document(str(sample_file))
+    
+    # 测试搜索
+    print("\n🔍 测试知识库搜索...")
+    search_queries = [
+        "价值投资",
+        "风险管理",
+        "技术分析",
+        "投资策略"
+    ]
+    
+    for query in search_queries:
+        print(f"\n查询: {query}")
+        results = kb.search(query, limit=2)
+        for i, result in enumerate(results, 1):
+            print(f"  {i}. {result['text'][:100]}... (相关度: {result['score']:.3f})")
+
+
+def demo_local_llm():
+    """演示本地LLM功能"""
+    print("\n=== 本地LLM功能演示 ===")
+    
+    llm_config = LocalLLMConfig()
+    
+    # 检查可用模型
+    available = llm_config.list_available_models()
+    print(f"可用模型: {available}")
+    
+    ollama_status = available.get("ollama", {})
+    if ollama_status.get("status") == "available" and ollama_status.get("models"):
+        model_name = ollama_status["models"][0]
+        print(f"\n🤖 使用模型: {model_name}")
+        
+        test_queries = [
+            "简述中国股市的主要特点",
+            "解释价值投资的核心理念", 
+            "分析新能源汽车板块的投资机会"
+        ]
+        
+        for query in test_queries:
+            print(f"\n问题: {query}")
+            response = llm_config.call_ollama_model(
+                model_name, 
+                query,
+                "你是一位专业的金融投资分析师，请用简洁专业的语言回答问题。"
+            )
+            print(f"回答: {response[:200]}...")
+    else:
+        print("⚠️  Ollama不可用或无可用模型")
+        print("💡 安装指南:")
+        print(llm_config.setup_instructions())
+
+
+async def demo_web_search():
+    """演示网络搜索功能"""
+    print("\n=== 网络搜索功能演示 ===")
+    
+    try:
+        from mcp_web_search import WebSearcher
+        
+        searcher = WebSearcher()
+        
+        # 测试搜索功能
+        print("🌐 测试DuckDuckGo搜索...")
+        results = searcher.search_duckduckgo("新能源汽车 股票", 3)
+        
+        for i, result in enumerate(results, 1):
+            print(f"\n{i}. {result['title']}")
+            print(f"   URL: {result['url']}")
+            print(f"   摘要: {result['snippet'][:100]}...")
+        
+        # 测试金融新闻
+        print("\n📰 测试金融新闻获取...")
+        news = searcher.search_finance_news("新能源")
+        
+        for i, item in enumerate(news[:3], 1):
+            print(f"\n{i}. {item['title']}")
+            print(f"   来源: {item['source']}")
+            print(f"   摘要: {item['summary'][:100]}...")
+            
+    except Exception as e:
+        print(f"❌ 网络搜索演示失败: {e}")
+        print("💡 请检查网络连接和依赖包")
+
+
+def demo_file_structure():
+    """显示项目文件结构"""
+    print("\n=== 项目文件结构 ===")
+    
+    def print_tree(directory, prefix="", level=0):
+        if level > 2:  # 限制显示层级
+            return
+            
+        path = Path(directory)
+        if not path.exists():
+            return
+            
+        items = sorted(path.iterdir(), key=lambda x: (x.is_file(), x.name))
+        
+        for i, item in enumerate(items):
+            is_last = i == len(items) - 1
+            current_prefix = "└── " if is_last else "├── "
+            print(f"{prefix}{current_prefix}{item.name}")
+            
+            if item.is_dir() and not item.name.startswith('.'):
+                extension = "    " if is_last else "│   "
+                print_tree(item, prefix + extension, level + 1)
+    
+    print("📁 项目目录结构:")
+    print_tree(".")
+
+
+async def main():
+    """主演示函数"""
+    print("""
+╔══════════════════════════════════════════════════════════════╗
+║                  投资研究支持系统演示                          ║
+║                     System Demo                             ║
+╚══════════════════════════════════════════════════════════════╝
+    """)
+    
+    # 显示项目结构
+    demo_file_structure()
+    
+    # 演示各个功能模块
+    try:
+        await demo_knowledge_base()
+    except Exception as e:
+        print(f"❌ 知识库演示失败: {e}")
+    
+    try:
+        demo_local_llm()
+    except Exception as e:
+        print(f"❌ 本地LLM演示失败: {e}")
+    
+    try:
+        await demo_web_search()
+    except Exception as e:
+        print(f"❌ 网络搜索演示失败: {e}")
+    
+    print("""
+📋 演示完成！
+
+接下来的步骤:
+1. 配置API密钥 (编辑.env文件)
+2. 安装本地LLM模型 (可选)
+   - 运行: python src/local_llm_config.py
+3. 添加您的投资文档到documents目录
+4. 运行完整系统: python main.py
+
+更多帮助: python main.py --help
+    """)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

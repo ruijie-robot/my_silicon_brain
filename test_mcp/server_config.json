@@ -1,5 +1,14 @@
 {
     "mcpServers": {
+        "web_search": {
+            "command": "python",
+            "args": ["src/mcp_web_search.py"]
+        },
+        
+        "research": {
+            "command": "python",
+            "args": ["test_mcp/research_server.py"]
+        },
         
         "filesystem": {
             "command": "npx",
@@ -8,11 +17,6 @@
                 "@modelcontextprotocol/server-filesystem",
                 "."
             ]
-        },
-        
-        "research": {
-            "command": "uv",
-            "args": ["run", "research_server.py"]
         },
         
         "fetch": {
