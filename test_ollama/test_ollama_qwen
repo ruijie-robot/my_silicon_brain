@@ -1,5 +1,12 @@
+import ollama
 from ollama import chat
 from ollama import ChatResponse
+
+single = ollama.embed(
+  model='qwen3-embedding:0.6b',
+  input='The quick brown fox jumps over the lazy dog.'
+)
+print(len(single['embeddings'][0]))  # vector length
 
 response: ChatResponse = chat(model='qwen3:0.6b', messages=[
   {

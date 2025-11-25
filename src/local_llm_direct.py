@@ -15,7 +15,7 @@ class DirectOllamaLLM:
         """列出可用模型"""
         try:
             models = self.client.list()
-            return [model['name'] for model in models['models']]
+            return [model.model for model in models['models']]
         except Exception as e:
             print(f"获取模型列表失败: {e}")
             return []
