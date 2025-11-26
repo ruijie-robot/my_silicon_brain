@@ -5,7 +5,8 @@
 
 import ollama
 from typing import Optional, List, Dict, Any
-
+from ollama import chat, embeddings
+from ollama import ChatResponse
 
 class DirectOllamaLLM:
     def __init__(self):
@@ -69,6 +70,30 @@ class DirectOllamaLLM:
         except Exception as e:
             yield f"错误: {str(e)}"
 
+    def embed(self, model: str, text: str) -> list:
+        """
+        使用指定模型对一句话(text)生成embedding向量。
+
+        :param model: embedding模型名称 (如 'qwen3-embedding:0.6b')
+        :param text: 要编码的文本
+        :return: embedding向量（list[float]）
+        """
+        try:
+            result = self.client.embed(
+                model=model,
+                input=text
+            )
+            # Ollama返回 dict，字段为 'embeddings'，为list (通常长度1)
+            embeddings = result.get('embeddings', [])
+            if embeddings:
+                return embeddings[0]
+            else:
+                return []
+        except Exception as e:
+            # 可选: 返回空或者异常信息
+            return []
+
+
 
 # 使用示例
 if __name__ == "__main__":
@@ -79,11 +104,19 @@ if __name__ == "__main__":
     print(f"可用模型: {models}")
     
     if models:
-        model = models[0]
         
+        embed_model = models[0] 
+        model = models[1]
+        
+        embeddings = llm.embed(
+        model=embed_model, # 'qwen3-embedding:0.6b'
+        text='The quick brown fox jumps over the lazy dog.'
+        )
+        print(embeddings)  # vector length
+
         # 简单对话
         response = llm.simple_chat(
-            model=model,
+            model=model, # 'qwen3:0.6b'
             prompt="简述中国股市特点",
             system_prompt="你是专业的金融分析师"
         )
