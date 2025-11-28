@@ -9,10 +9,12 @@ from ollama import chat, embeddings
 from ollama import ChatResponse
 
 class DirectOllamaLLM:
-    def __init__(self):
+    def __init__(self, model: str = 'qwen3:0.6b', embed_model: str = 'qwen3-embedding:0.6b'):
+        self.model = model
+        self.embed_model = embed_model
         self.client = ollama.Client()
     
-    def list_models(self) -> List[str]:
+    def list_ollama_models(self) -> List[str]:
         """列出可用模型"""
         try:
             models = self.client.list()
@@ -21,23 +23,8 @@ class DirectOllamaLLM:
             print(f"获取模型列表失败: {e}")
             return []
     
-    def chat(self, model: str, messages: List[Dict[str, str]], 
-             temperature: float = 0.7) -> str:
-        """聊天接口"""
-        try:
-            response = ollama.chat(
-                model=model,
-                messages=messages,
-                options={
-                    'temperature': temperature,
-                    'num_predict': 2000
-                }
-            )
-            return response['message']['content']
-        except Exception as e:
-            return f"调用失败: {str(e)}"
     
-    def simple_chat(self, model: str, prompt: str, 
+    def simple_chat(self, prompt: str, 
                    system_prompt: Optional[str] = None) -> str:
         """简单聊天接口"""
         messages = []
@@ -53,13 +40,24 @@ class DirectOllamaLLM:
             'content': prompt
         })
         
-        return self.chat(model, messages)
+        try:
+            response = ollama.chat(
+                model=self.model,
+                messages=messages,
+                options={
+                    'temperature': 0.8,
+                    'num_predict': 2000
+                }
+            )
+            return response['message']['content']
+        except Exception as e:
+            return f"调用失败: {str(e)}"
     
-    def stream_chat(self, model: str, prompt: str):
+    def stream_chat(self, prompt: str):
         """流式聊天"""
         try:
             stream = ollama.chat(
-                model=model,
+                model=self.model,
                 messages=[{'role': 'user', 'content': prompt}],
                 stream=True,
             )
@@ -70,7 +68,7 @@ class DirectOllamaLLM:
         except Exception as e:
             yield f"错误: {str(e)}"
 
-    def embed(self, model: str, text: str) -> list:
+    def embed(self, text: str) -> list:
         """
         使用指定模型对一句话(text)生成embedding向量。
 
@@ -80,7 +78,7 @@ class DirectOllamaLLM:
         """
         try:
             result = self.client.embed(
-                model=model,
+                model=self.embed_model,
                 input=text
             )
             # Ollama返回 dict，字段为 'embeddings'，为list (通常长度1)
@@ -100,29 +98,25 @@ if __name__ == "__main__":
     llm = DirectOllamaLLM()
     
     # 列出模型
-    models = llm.list_models()
+    models = llm.list_ollama_models()
     print(f"可用模型: {models}")
-    
-    if models:
         
-        embed_model = models[0] 
-        model = models[1]
-        
-        embeddings = llm.embed(
-        model=embed_model, # 'qwen3-embedding:0.6b'
-        text='The quick brown fox jumps over the lazy dog.'
-        )
-        print(embeddings)  # vector length
+    # 'qwen3-embedding:0.6b'
+    embeddings = llm.embed(
+    text='The quick brown fox jumps over the lazy dog.'
+    )
+    print(embeddings)  # vector length
 
-        # 简单对话
-        response = llm.simple_chat(
-            model=model, # 'qwen3:0.6b'
-            prompt="简述中国股市特点",
-            system_prompt="你是专业的金融分析师"
-        )
-        print(f"回答: {response}")
-        
-        # 流式对话
-        print("\n流式输出:")
-        for chunk in llm.stream_chat(model, "分析新能源汽车板块"):
-            print(chunk, end='', flush=True)
+    # 简单对话 'qwen3:0.6b'
+    response = llm.simple_chat(
+        prompt="简述中国股市特点",
+        system_prompt="你是专业的金融分析师"
+    )
+    print(f"回答: {response}")
+    
+    # 流式对话
+    print("\n流式输出:")
+    for chunk in llm.stream_chat("分析新能源汽车板块"):
+        print(chunk, end='', flush=True)
+
+    print("Finished")

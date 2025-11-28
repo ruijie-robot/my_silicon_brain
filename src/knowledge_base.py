@@ -6,13 +6,15 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import asyncio
 
-from pymilvus import MilvusClient
+from pymilvus import MilvusClient, DataType
 from openai import OpenAI
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import unstructured
 from unstructured.partition.auto import partition
+from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.md import partition_md
 
 load_dotenv()
 
@@ -24,7 +26,33 @@ class DocumentProcessor:
     def process_document(self, file_path: str) -> List[Dict[str, Any]]:
         """处理文档并返回文本块"""
         try:
-            elements = partition(filename=file_path)
+
+            # 如果 file_path 以 pdf 结尾，采用partition_pdf方式并配置合适参数，否则用partition
+            if file_path.lower().endswith(".pdf"):
+                elements = partition_pdf(
+                    filename=file_path,
+                    languages=["chi_sim", "eng"],  # 支持中文和英文
+                    strategy="hi_res",             # 高精度支持中文
+                    extract_images=False,
+                    infer_table_structure=True,
+                    ocr_mode="entire_page",
+                    extract_image_block_to_payload=False,
+                )
+                print("使用partition_pdf")
+            elif file_path.lower().endswith(".md"):
+                # 如果以.md结尾，使用partition_md并设置中文、英文语言和合适分块参数
+                elements = partition_md(
+                    filename=file_path,
+                    encoding="utf-8",
+                    languages=["chi_sim", "eng"],
+                    chunking_strategy="by_title",
+                    max_characters=2000,
+                    new_after_n_chars=1500,
+                )
+                print("使用partition_md")
+            else:
+                print("使用通用的partition")
+                elements = partition(filename=file_path)
             chunks = []
             
             for i, element in enumerate(elements):
@@ -43,17 +71,7 @@ class DocumentProcessor:
             print(f"Error processing {file_path}: {e}")
             return []
     
-    def create_embedding(self, text: str) -> List[float]:
-        """创建文本嵌入"""
-        try:
-            response = self.openai_client.embeddings.create(
-                input=text,
-                model="text-embedding-3-small"
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            print(f"Error creating embedding: {e}")
-            return []
+    
 
 
 class KnowledgeBase:
@@ -62,7 +80,7 @@ class KnowledgeBase:
         self.collection_name = collection_name
         self.processor = DocumentProcessor()
         self.file_hashes = {}
-        self._initialize_collection()
+        self._initialize_collection() #创建collections
         self._load_file_hashes()
     
     def _initialize_collection(self):
@@ -72,15 +90,48 @@ class KnowledgeBase:
         else:
             # 创建测试向量来确定维度
             test_embedding = self.processor.create_embedding("test")
-            if test_embedding:
-                dimension = len(test_embedding)
-                self.milvus_client.create_collection(
-                    collection_name=self.collection_name,
-                    dimension=dimension,
-                    metric_type="IP", # IP： inner product，这个选择会影响到索引的构建
-                    consistency_level="Bounded" # 写入后在可接受范围内，尽快同步到所有副本
-                )
-                print(f"Created collection {self.collection_name} with dimension {dimension}")
+            if not test_embedding:
+                print(f"Error: Failed to create test embedding. Cannot initialize collection {self.collection_name}")
+                raise RuntimeError("Failed to create test embedding. Check OpenAI API key and connection.")
+            
+            dimension = len(test_embedding)
+            # 1. 定义 Schema
+            schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=True)
+            schema.add_field(field_name="id", data_type=DataType.INT64, is_primary=True)
+            schema.add_field(field_name="vector", data_type=DataType.FLOAT_VECTOR, dim=dimension)
+            schema.add_field(field_name="source", data_type=DataType.VARCHAR, max_length=512) # 示例字段
+
+            # 2. 定义 Index（在这里指定 metric_type）
+            index_params = MilvusClient.prepare_index_params()
+            index_params.add_index(
+                field_name="vector",
+                index_type="HNSW", 
+                metric_type="IP", # IP： inner product，这个选择会影响到索引的构建
+                params={"M": 8, "efConstruction": 200} # HNSW 索引的特定超参数。
+            )
+
+            # 3. 创建集合
+            self.milvus_client.create_collection(
+                collection_name=self.collection_name,
+                schema=schema,             # 必须传入 schema
+                index_params=index_params, # 推荐传入 index
+                consistency_level="Bounded"
+            )
+
+            print(f"创建collection: {self.collection_name} 集合已使用 Schema 和 Index 正确创建。")
+
+
+            # 创建测试向量来确定维度
+            # test_embedding = self.processor.create_embedding("test")
+            # if test_embedding:
+            #     dimension = len(test_embedding)
+            #     self.milvus_client.create_collection(
+            #         collection_name=self.collection_name,
+            #         dimension=dimension,
+            #         metric_type="IP", # IP： inner product，这个选择会影响到索引的构建
+            #         consistency_level="Bounded" # 写入后在可接受范围内，尽快同步到所有副本
+            #     )
+            #     print(f"Created collection {self.collection_name} with dimension {dimension}")
     
     def _load_file_hashes(self):
         """加载文件哈希记录"""
@@ -155,6 +206,11 @@ class KnowledgeBase:
     def _remove_document(self, file_path: str):
         """从知识库中移除文档"""
         try:
+            # 先检查 collection 是否存在
+            if not self.milvus_client.has_collection(self.collection_name):
+                print(f"Collection {self.collection_name} does not exist, skipping removal")
+                return
+            
             # 查找该文件的所有记录
             search_results = self.milvus_client.query(
                 collection_name=self.collection_name,
@@ -176,6 +232,11 @@ class KnowledgeBase:
     def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """搜索知识库"""
         try:
+            # 先检查 collection 是否存在
+            if not self.milvus_client.has_collection(self.collection_name):
+                print(f"Collection {self.collection_name} does not exist, returning empty results")
+                return []
+            
             query_embedding = self.processor.create_embedding(query)
             if not query_embedding:
                 return []
