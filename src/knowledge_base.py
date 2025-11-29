@@ -15,13 +15,16 @@ import unstructured
 from unstructured.partition.auto import partition
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.md import partition_md
+from local_llm_direct import DirectOllamaLLM
 
 load_dotenv()
 
 
 class DocumentProcessor:
     def __init__(self):
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # ['qwen3-embedding:0.6b', 'qwen3:0.6b']
+        self.llm = DirectOllamaLLM(model='qwen3:0.6b', embed_model='qwen3-embedding:0.6b')
+
     
     def process_document(self, file_path: str) -> List[Dict[str, Any]]:
         """处理文档并返回文本块"""
@@ -89,7 +92,7 @@ class KnowledgeBase:
             print(f"Collection {self.collection_name} already exists")
         else:
             # 创建测试向量来确定维度
-            test_embedding = self.processor.create_embedding("test")
+            test_embedding = self.processor.llm.embed("test")
             if not test_embedding:
                 print(f"Error: Failed to create test embedding. Cannot initialize collection {self.collection_name}")
                 raise RuntimeError("Failed to create test embedding. Check OpenAI API key and connection.")
@@ -97,17 +100,18 @@ class KnowledgeBase:
             dimension = len(test_embedding)
             # 1. 定义 Schema
             schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=True)
-            schema.add_field(field_name="id", data_type=DataType.INT64, is_primary=True)
-            schema.add_field(field_name="vector", data_type=DataType.FLOAT_VECTOR, dim=dimension)
-            schema.add_field(field_name="source", data_type=DataType.VARCHAR, max_length=512) # 示例字段
+            schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+            schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dimension)
+            schema.add_field(field_name="source", datatype=DataType.VARCHAR, max_length=512) # 示例字段
 
             # 2. 定义 Index（在这里指定 metric_type）
+            # 注意：本地模式只支持 FLAT, IVF_FLAT, AUTOINDEX, 不支持HNSW模式
             index_params = MilvusClient.prepare_index_params()
             index_params.add_index(
                 field_name="vector",
-                index_type="HNSW", 
-                metric_type="IP", # IP： inner product，这个选择会影响到索引的构建
-                params={"M": 8, "efConstruction": 200} # HNSW 索引的特定超参数。
+                index_type="FLAT",  # 本地模式使用 FLAT 索引
+                metric_type="IP",   # IP： inner product，这个选择会影响到索引的构建
+                params={}            # FLAT 索引不需要额外参数
             )
 
             # 3. 创建集合
@@ -119,19 +123,6 @@ class KnowledgeBase:
             )
 
             print(f"创建collection: {self.collection_name} 集合已使用 Schema 和 Index 正确创建。")
-
-
-            # 创建测试向量来确定维度
-            # test_embedding = self.processor.create_embedding("test")
-            # if test_embedding:
-            #     dimension = len(test_embedding)
-            #     self.milvus_client.create_collection(
-            #         collection_name=self.collection_name,
-            #         dimension=dimension,
-            #         metric_type="IP", # IP： inner product，这个选择会影响到索引的构建
-            #         consistency_level="Bounded" # 写入后在可接受范围内，尽快同步到所有副本
-            #     )
-            #     print(f"Created collection {self.collection_name} with dimension {dimension}")
     
     def _load_file_hashes(self):
         """加载文件哈希记录"""
