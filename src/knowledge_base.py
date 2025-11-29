@@ -35,7 +35,7 @@ class DocumentProcessor:
                 elements = partition_pdf(
                     filename=file_path,
                     languages=["chi_sim", "eng"],  # 支持中文和英文
-                    strategy="hi_res",             # 高精度支持中文
+                    strategy="fast",             # hi_res高精度支持中文, 依赖在线YOLOX模型，而fast不依赖在线
                     extract_images=False,
                     infer_table_structure=True,
                     ocr_mode="entire_page",
@@ -165,16 +165,17 @@ class KnowledgeBase:
             # 准备数据用于插入
             data = []
             for chunk in chunks:
-                embedding = self.processor.create_embedding(chunk["text"])
+                embedding = self.processor.llm.embed(chunk["text"])
                 if embedding:
                     data.append({
-                        "id": chunk["id"],
+                        # 不包含 id 字段，因为 schema 设置了 auto_id=True，Milvus 会自动生成 int64 主键
                         "vector": embedding,
                         "text": chunk["text"],
                         "source": chunk["source"],
                         "element_type": chunk["element_type"],
-                        "metadata": json.dumps(chunk["metadata"]),
-                        "timestamp": datetime.now().isoformat()
+                        "metadata": chunk["metadata"],
+                        "timestamp": datetime.now().isoformat(),
+                        "chunk_id": chunk["id"]  # 将原来的字符串 ID 保存为动态字段
                     })
             
             # 插入数据
@@ -228,7 +229,7 @@ class KnowledgeBase:
                 print(f"Collection {self.collection_name} does not exist, returning empty results")
                 return []
             
-            query_embedding = self.processor.create_embedding(query)
+            query_embedding = self.processor.llm.embed(query)
             if not query_embedding:
                 return []
             
@@ -246,7 +247,7 @@ class KnowledgeBase:
                     "text": res["entity"]["text"],
                     "source": res["entity"]["source"],
                     "element_type": res["entity"]["element_type"],
-                    "metadata": json.loads(res["entity"]["metadata"]) if res["entity"]["metadata"] else {},
+                    "metadata": res["entity"]["metadata"] if res["entity"]["metadata"] else {},
                     "timestamp": res["entity"]["timestamp"],
                     "score": res["distance"]
                 })
