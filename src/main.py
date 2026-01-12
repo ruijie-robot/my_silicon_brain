@@ -10,7 +10,6 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from knowledge_base import KnowledgeBase
-from local_llm_config import LocalLLMConfig
 
 
 async def demo_knowledge_base():
