@@ -127,31 +127,32 @@ async def main():
     """主函数"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="投资研究支持系统")
-    parser.add_argument("--setup", action="store_true", help="运行环境设置向导")
-    parser.add_argument("--knowledge-only", action="store_true", help="仅启动知识库监控")
-    parser.add_argument("--check-llm", action="store_true", help="检查本地LLM配置")
-    parser.add_argument("--interactive", action="store_true", default=True, help="启动交互式界面")
+    # parser = argparse.ArgumentParser(description="投资研究支持系统")
+    # parser.add_argument("--setup", action="store_true", help="运行环境设置向导")
+    # parser.add_argument("--knowledge-only", action="store_true", help="仅启动知识库监控")
+    # parser.add_argument("--check-llm", action="store_true", help="检查本地LLM配置")
+    # parser.add_argument("--interactive", action="store_true", default=True, help="启动交互式界面")
     
-    args = parser.parse_args()
+    # args = parser.parse_args()
     
     print_banner()
     
-    if args.setup:
-        print("🔧 运行环境设置向导...")
-        check_environment()
-        llm_config = LocalLLMConfig()
-        print(llm_config.setup_instructions())
-        return
+    # if args.setup:
+    #     print("🔧 运行环境设置向导...")
+    #     check_environment()
+    #     llm_config = LocalLLMConfig()
+    #     print(llm_config.setup_instructions())
+    #     return
     
-    if args.check_llm:
-        print("🔍 检查本地LLM配置...")
-        llm_config = LocalLLMConfig()
-        from local_llm_config import main as check_llm_main
-        check_llm_main()
-        return
+    # if args.check_llm:
+    #     print("🔍 检查本地LLM配置...")
+    #     llm_config = LocalLLMConfig()
+    #     from local_llm_config import main as check_llm_main
+    #     check_llm_main()
+    #     return
     
-    if args.knowledge_only:
+    # if args.knowledge_only:
+    if True:
         print("📚 启动知识库监控模式...")
         try:
             kb = start_document_monitor("documents")
