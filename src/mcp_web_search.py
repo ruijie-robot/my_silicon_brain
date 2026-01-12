@@ -1,6 +1,5 @@
 import requests
 import json
-import asyncio
 from typing import List, Dict, Any
 from mcp.server.fastmcp import FastMCP
 from bs4 import BeautifulSoup
@@ -11,6 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Initialize FastMCP server
 mcp = FastMCP("web_search")
 
 class WebSearcher:
@@ -151,7 +151,7 @@ def get_webpage_content(url: str, max_length: int = 2000) -> str:
         max_length: 最大内容长度 (默认: 2000)
         
     Returns:
-        网页文本内容
+        网页文本内容 (Ruijie: 测试可用)
     """
     try:
         content = searcher.get_page_content(url, max_length)
@@ -229,4 +229,5 @@ def search_market_sector(sector: str) -> str:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 if __name__ == "__main__":
-    mcp.run(transport='stdio')
+    web_search(query='gold', max_results=5)
+    # mcp.run(transport='stdio')

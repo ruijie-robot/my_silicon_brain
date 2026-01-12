@@ -29,18 +29,24 @@ class DocumentProcessor:
     def process_document(self, file_path: str) -> List[Dict[str, Any]]:
         """处理文档并返回文本块"""
         try:
-
             # 如果 file_path 以 pdf 结尾，采用partition_pdf方式并配置合适参数，否则用partition
             if file_path.lower().endswith(".pdf"):
                 elements = partition_pdf(
                     filename=file_path,
                     languages=["chi_sim", "eng"],  # 支持中文和英文
-                    strategy="fast",             # hi_res高精度支持中文, 依赖在线YOLOX模型，而fast不依赖在线
+                    strategy="hi_res",             # hi_res高精度支持中文, 依赖在线YOLOX模型，而fast不依赖在线
                     extract_images=False,
                     infer_table_structure=True,
                     ocr_mode="entire_page",
                     extract_image_block_to_payload=False,
                 )
+                ### 出现的几个报错
+                # 1. Could get FontBBox from font descriptor because None cannot be parsed as 4 floats
+                # 意思是，pdf解析的时候，字体边界框需要4个float来描述位置信息，但是没有解析到float，解析到None值了，所以报错
+                # 2. The `max_size` parameter is deprecated and will be removed in v4.26. Please specify in `size['longest_edge'] instead`.
+                # 意思是，底层有函数调用了max_size的参数
+                # 3. short text: "2025/10/13 21:41". Defaulting to English. No features in text.
+                # 意思是，pdf解析的时候， 只有日期，无法判断是中文还是英文，所以报错
                 print("使用partition_pdf")
             elif file_path.lower().endswith(".md"):
                 # 如果以.md结尾，使用partition_md并设置中文、英文语言和合适分块参数
@@ -109,9 +115,13 @@ class KnowledgeBase:
             index_params = MilvusClient.prepare_index_params()
             index_params.add_index(
                 field_name="vector",
-                index_type="FLAT",  # 本地模式使用 FLAT 索引
-                metric_type="IP",   # IP： inner product，这个选择会影响到索引的构建
-                params={}            # FLAT 索引不需要额外参数
+                index_type="HNSW",  # 本地模式使用 FLAT 索引
+                index_name="vector_index", # Name of the index to create
+                metric_type="COSINE",   # IP： inner product，这个选择会影响到索引的构建
+                params={
+                    "M": 64, # Maximum number of neighbors each node can connect to in the graph
+                    "efConstruction": 100 # Number of candidate neighbors considered for connection during index construction
+                    } # Index building params
             )
 
             # 3. 创建集合
@@ -122,6 +132,8 @@ class KnowledgeBase:
                 consistency_level="Bounded"
             )
 
+            # 在创建集合后，必须显式加载集合到内存
+            self.milvus_client.load_collection(collection_name=self.collection_name)
             print(f"创建collection: {self.collection_name} 集合已使用 Schema 和 Index 正确创建。")
     
     def _load_file_hashes(self):
@@ -140,6 +152,20 @@ class KnowledgeBase:
         """计算文件哈希"""
         with open(file_path, 'rb') as f:
             return hashlib.md5(f.read()).hexdigest()
+    
+    def _sanitize_metadata(self, metadata: Any) -> Dict[str, Any]:
+        """清洗 metadata，确保只包含 Milvus JSON 动态字段能接受的基础类型"""
+        if not isinstance(metadata, dict):
+            return {}
+        
+        sanitized: Dict[str, Any] = {}
+        for key, value in metadata.items():
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                sanitized[key] = value
+            else:
+                # 对于 datetime、Path 等复杂类型统一转成字符串，避免类型不匹配
+                sanitized[key] = str(value)
+        return sanitized
     
     def _file_changed(self, file_path: str) -> bool:
         """检查文件是否变更"""
@@ -173,7 +199,7 @@ class KnowledgeBase:
                         "text": chunk["text"],
                         "source": chunk["source"],
                         "element_type": chunk["element_type"],
-                        "metadata": chunk["metadata"],
+                        "metadata": self._sanitize_metadata(chunk["metadata"]),
                         "timestamp": datetime.now().isoformat(),
                         "chunk_id": chunk["id"]  # 将原来的字符串 ID 保存为动态字段
                     })
@@ -235,9 +261,10 @@ class KnowledgeBase:
             
             search_results = self.milvus_client.search(
                 collection_name=self.collection_name,
+                anns_field="vector", 
                 data=[query_embedding],
                 limit=limit,
-                search_params={"metric_type": "IP", "params": {}},
+                search_params={"params": {"ef": 10}},
                 output_fields=["text", "source", "element_type", "metadata", "timestamp"]
             )
             
@@ -257,6 +284,25 @@ class KnowledgeBase:
         except Exception as e:
             print(f"Error searching: {e}")
             return []
+    
+    def drop_collection(self, collection_name: Optional[str] = None):
+        """删除指定的 collection
+        
+        Args:
+            collection_name: 要删除的 collection 名称，如果为 None 则删除当前实例的 collection
+        """
+        target_collection = collection_name or self.collection_name
+        try:
+            if self.milvus_client.has_collection(target_collection):
+                self.milvus_client.drop_collection(target_collection)
+                print(f"Collection {target_collection} has been dropped")
+                return True
+            else:
+                print(f"Collection {target_collection} does not exist")
+                return False
+        except Exception as e:
+            print(f"Error dropping collection {target_collection}: {e}")
+            return False
     
     def scan_directory(self, directory: str):
         """扫描目录并添加所有文档"""

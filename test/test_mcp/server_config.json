@@ -1,0 +1,35 @@
+{
+    "mcpServers": {
+        "google_search": {
+            "command": "python",
+            "args": ["src/google_search_mcp.py"]
+        },
+        
+        "fetch": {
+            "command": "npx",
+            "args": [
+                "-y", 
+                "@modelcontextprotocol/server-fetch"
+            ]
+        },
+        
+        "web_search": {
+            "command": "python",
+            "args": ["src/mcp_web_search.py"]
+        },
+        
+        "research": {
+            "command": "python",
+            "args": ["test_mcp/research_server.py"]
+        },
+        
+        "filesystem": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                "."
+            ]
+        }
+    }
+}
