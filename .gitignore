@@ -1,0 +1,5 @@
+uv.lock
+.env
+.DS_Store
+.milvus_demo.db.lock
+*.db
