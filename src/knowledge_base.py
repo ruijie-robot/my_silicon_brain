@@ -1,369 +1,708 @@
+"""
+函数式编程版本的知识库模块
+使用纯函数、函数组合和不可变数据结构
+"""
+
 import os
 import json
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable, Tuple
 from pathlib import Path
-import asyncio
+from dataclasses import dataclass, field
+from functools import partial, reduce
 
 from pymilvus import MilvusClient, DataType
-from openai import OpenAI
 from dotenv import load_dotenv
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-import unstructured
 from unstructured.partition.auto import partition
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.md import partition_md
-from local_llm_direct import DirectOllamaLLM
+
+# 导入函数式 LLM 模块
+import sys
+sys.path.append(str(Path(__file__).parent))
+from local_llm_direct import (
+    create_config, embed_text, LLMConfig, EmbeddingResult
+)
 
 load_dotenv()
 
 
-class DocumentProcessor:
-    def __init__(self):
-        # ['qwen3-embedding:0.6b', 'qwen3:0.6b']
-        self.llm = DirectOllamaLLM(model='qwen3:0.6b', embed_model='qwen3-embedding:0.6b')
+# ============================================================================
+# 数据类型定义 - 使用不可变的 dataclass
+# ============================================================================
 
-    
-    def process_document(self, file_path: str) -> List[Dict[str, Any]]:
-        """处理文档并返回文本块"""
-        try:
-            # 如果 file_path 以 pdf 结尾，采用partition_pdf方式并配置合适参数，否则用partition
-            if file_path.lower().endswith(".pdf"):
-                elements = partition_pdf(
-                    filename=file_path,
-                    languages=["chi_sim", "eng"],  # 支持中文和英文
-                    strategy="hi_res",             # hi_res高精度支持中文, 依赖在线YOLOX模型，而fast不依赖在线
-                    extract_images=False,
-                    infer_table_structure=True,
-                    ocr_mode="entire_page",
-                    extract_image_block_to_payload=False,
-                )
-                ### 出现的几个报错
-                # 1. Could get FontBBox from font descriptor because None cannot be parsed as 4 floats
-                # 意思是，pdf解析的时候，字体边界框需要4个float来描述位置信息，但是没有解析到float，解析到None值了，所以报错
-                # 2. The `max_size` parameter is deprecated and will be removed in v4.26. Please specify in `size['longest_edge'] instead`.
-                # 意思是，底层有函数调用了max_size的参数
-                # 3. short text: "2025/10/13 21:41". Defaulting to English. No features in text.
-                # 意思是，pdf解析的时候， 只有日期，无法判断是中文还是英文，所以报错
-                print("使用partition_pdf")
-            elif file_path.lower().endswith(".md"):
-                # 如果以.md结尾，使用partition_md并设置中文、英文语言和合适分块参数
-                elements = partition_md(
-                    filename=file_path,
-                    encoding="utf-8",
-                    languages=["chi_sim", "eng"],
-                    chunking_strategy="by_title",
-                    max_characters=2000,
-                    new_after_n_chars=1500,
-                )
-                print("使用partition_md")
-            else:
-                print("使用通用的partition")
-                elements = partition(filename=file_path)
-            chunks = []
-            
-            for i, element in enumerate(elements):
-                if hasattr(element, 'text') and element.text.strip():
-                    chunk = {
-                        "id": f"{Path(file_path).stem}_{i}",
-                        "text": element.text,
-                        "source": file_path,
-                        "element_type": str(type(element).__name__),
-                        "metadata": element.metadata.to_dict() if hasattr(element, 'metadata') else {}
-                    }
-                    chunks.append(chunk)
-            
-            return chunks
-        except Exception as e:
-            print(f"Error processing {file_path}: {e}")
-            return []
-    
-    
+@dataclass(frozen=True)
+class DocumentChunk:
+    """不可变的文档块"""
+    id: str
+    text: str
+    source: str
+    element_type: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class KnowledgeBase:
-    def __init__(self, milvus_uri: str = "./milvus_demo.db", collection_name: str = "finance_knowledge"):
-        self.milvus_client = MilvusClient(uri=milvus_uri)
-        self.collection_name = collection_name
-        self.processor = DocumentProcessor()
-        self.file_hashes = {}
-        self._initialize_collection() #创建collections
-        self._load_file_hashes()
-    
-    def _initialize_collection(self):
-        """初始化Milvus集合"""
-        if self.milvus_client.has_collection(self.collection_name):
-            print(f"Collection {self.collection_name} already exists")
+@dataclass(frozen=True)
+class EmbeddedChunk:
+    """不可变的嵌入文档块"""
+    chunk: DocumentChunk
+    embedding: List[float]
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """不可变的搜索结果"""
+    text: str
+    source: str
+    element_type: str
+    metadata: Dict[str, Any]
+    timestamp: str
+    score: float
+
+
+@dataclass(frozen=True)
+class FileHash:
+    """不可变的文件哈希记录"""
+    file_path: str
+    hash_value: str
+
+
+@dataclass(frozen=True)
+class CollectionConfig:
+    """不可变的集合配置"""
+    milvus_uri: str
+    collection_name: str
+    index_type: str = "HNSW"
+    metric_type: str = "COSINE"
+    m: int = 64
+    ef_construction: int = 100
+
+
+@dataclass(frozen=True)
+class ProcessingConfig:
+    """不可变的文档处理配置"""
+    supported_extensions: Tuple[str, ...] = ('.pdf', '.md', '.txt', '.docx', '.html')
+    pdf_languages: Tuple[str, ...] = ("chi_sim", "eng")
+    pdf_strategy: str = "hi_res"
+    md_max_characters: int = 2000
+    md_new_after_n_chars: int = 1500
+
+
+# ============================================================================
+# 纯函数 - 文件操作相关
+# ============================================================================
+
+def compute_file_hash(file_path: str) -> str:
+    """计算文件哈希 - 副作用（读取文件）"""
+    with open(file_path, 'rb') as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+
+def load_file_hashes(hash_file: str = "file_hashes.json") -> Dict[str, str]:
+    """加载文件哈希记录 - 副作用（读取文件）"""
+    if os.path.exists(hash_file):
+        with open(hash_file, 'r') as f:
+            return json.load(f)
+    return {}
+
+
+def save_file_hashes(hashes: Dict[str, str], hash_file: str = "file_hashes.json") -> None:
+    """保存文件哈希记录 - 副作用（写入文件）"""
+    with open(hash_file, 'w') as f:
+        json.dump(hashes, f, indent=2)
+
+
+def file_has_changed(file_path: str, stored_hashes: Dict[str, str]) -> bool:
+    """检查文件是否变更 - 纯函数"""
+    current_hash = compute_file_hash(file_path)
+    stored_hash = stored_hashes.get(file_path)
+    return current_hash != stored_hash
+
+
+def update_file_hash(file_path: str, hashes: Dict[str, str]) -> Dict[str, str]:
+    """更新文件哈希 - 返回新的哈希字典（不可变）"""
+    new_hash = compute_file_hash(file_path)
+    return {**hashes, file_path: new_hash}
+
+
+def is_supported_file(file_path: str, config: ProcessingConfig) -> bool:
+    """检查文件是否支持 - 纯函数"""
+    return Path(file_path).suffix.lower() in config.supported_extensions
+
+
+def collect_files_in_directory(
+    directory: str,
+    config: ProcessingConfig
+) -> List[str]:
+    """收集目录中的所有支持文件 - 副作用（读取目录）"""
+    files = []
+    for root, _, filenames in os.walk(directory):
+        for filename in filenames:
+            file_path = os.path.join(root, filename)
+            if is_supported_file(file_path, config):
+                files.append(file_path)
+    return files
+
+
+# ============================================================================
+# 纯函数 - 数据转换
+# ============================================================================
+
+def sanitize_metadata(metadata: Any) -> Dict[str, Any]:
+    """清洗 metadata - 纯函数"""
+    if not isinstance(metadata, dict):
+        return {}
+
+    sanitized = {}
+    for key, value in metadata.items():
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            sanitized[key] = value
         else:
-            # 创建测试向量来确定维度
-            test_embedding = self.processor.llm.embed("test")
-            if not test_embedding:
-                print(f"Error: Failed to create test embedding. Cannot initialize collection {self.collection_name}")
-                raise RuntimeError("Failed to create test embedding. Check OpenAI API key and connection.")
-            
-            dimension = len(test_embedding)
-            # 1. 定义 Schema
-            schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=True)
-            schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
-            schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dimension)
-            schema.add_field(field_name="source", datatype=DataType.VARCHAR, max_length=512) # 示例字段
+            sanitized[key] = str(value)
 
-            # 2. 定义 Index（在这里指定 metric_type）
-            # 注意：本地模式只支持 FLAT, IVF_FLAT, AUTOINDEX, 不支持HNSW模式
-            index_params = MilvusClient.prepare_index_params()
-            index_params.add_index(
-                field_name="vector",
-                index_type="HNSW",  # 本地模式使用 FLAT 索引
-                index_name="vector_index", # Name of the index to create
-                metric_type="COSINE",   # IP： inner product，这个选择会影响到索引的构建
-                params={
-                    "M": 64, # Maximum number of neighbors each node can connect to in the graph
-                    "efConstruction": 100 # Number of candidate neighbors considered for connection during index construction
-                    } # Index building params
-            )
-
-            # 3. 创建集合
-            self.milvus_client.create_collection(
-                collection_name=self.collection_name,
-                schema=schema,             # 必须传入 schema
-                index_params=index_params, # 推荐传入 index
-                consistency_level="Bounded"
-            )
-
-            # 在创建集合后，必须显式加载集合到内存
-            self.milvus_client.load_collection(collection_name=self.collection_name)
-            print(f"创建collection: {self.collection_name} 集合已使用 Schema 和 Index 正确创建。")
-    
-    def _load_file_hashes(self):
-        """加载文件哈希记录"""
-        hash_file = "file_hashes.json"
-        if os.path.exists(hash_file):
-            with open(hash_file, 'r') as f:
-                self.file_hashes = json.load(f)
-    
-    def _save_file_hashes(self):
-        """保存文件哈希记录"""
-        with open("file_hashes.json", 'w') as f:
-            json.dump(self.file_hashes, f, indent=2)
-    
-    def _get_file_hash(self, file_path: str) -> str:
-        """计算文件哈希"""
-        with open(file_path, 'rb') as f:
-            return hashlib.md5(f.read()).hexdigest()
-    
-    def _sanitize_metadata(self, metadata: Any) -> Dict[str, Any]:
-        """清洗 metadata，确保只包含 Milvus JSON 动态字段能接受的基础类型"""
-        if not isinstance(metadata, dict):
-            return {}
-        
-        sanitized: Dict[str, Any] = {}
-        for key, value in metadata.items():
-            if isinstance(value, (str, int, float, bool)) or value is None:
-                sanitized[key] = value
-            else:
-                # 对于 datetime、Path 等复杂类型统一转成字符串，避免类型不匹配
-                sanitized[key] = str(value)
-        return sanitized
-    
-    def _file_changed(self, file_path: str) -> bool:
-        """检查文件是否变更"""
-        current_hash = self._get_file_hash(file_path)
-        stored_hash = self.file_hashes.get(file_path)
-        return current_hash != stored_hash
-    
-    def add_document(self, file_path: str) -> bool:
-        """添加文档到知识库"""
-        try:
-            if not self._file_changed(file_path):
-                print(f"File {file_path} unchanged, skipping")
-                return False
-            
-            # 处理文档
-            chunks = self.processor.process_document(file_path)
-            if not chunks:
-                return False
-            
-            # 删除旧的文档记录
-            self._remove_document(file_path)
-            
-            # 准备数据用于插入
-            data = []
-            for chunk in chunks:
-                embedding = self.processor.llm.embed(chunk["text"])
-                if embedding:
-                    data.append({
-                        # 不包含 id 字段，因为 schema 设置了 auto_id=True，Milvus 会自动生成 int64 主键
-                        "vector": embedding,
-                        "text": chunk["text"],
-                        "source": chunk["source"],
-                        "element_type": chunk["element_type"],
-                        "metadata": self._sanitize_metadata(chunk["metadata"]),
-                        "timestamp": datetime.now().isoformat(),
-                        "chunk_id": chunk["id"]  # 将原来的字符串 ID 保存为动态字段
-                    })
-            
-            # 插入数据
-            if data:
-                self.milvus_client.insert(collection_name=self.collection_name, data=data)
-                
-                # 更新哈希记录
-                self.file_hashes[file_path] = self._get_file_hash(file_path)
-                self._save_file_hashes()
-                
-                print(f"Added {len(data)} chunks from {file_path}")
-                return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"Error adding document {file_path}: {e}")
-            return False
-    
-    def _remove_document(self, file_path: str):
-        """从知识库中移除文档"""
-        try:
-            # 先检查 collection 是否存在
-            if not self.milvus_client.has_collection(self.collection_name):
-                print(f"Collection {self.collection_name} does not exist, skipping removal")
-                return
-            
-            # 查找该文件的所有记录
-            search_results = self.milvus_client.query(
-                collection_name=self.collection_name,
-                filter=f'source == "{file_path}"',
-                output_fields=["id"]
-            )
-            
-            if search_results:
-                ids_to_delete = [result["id"] for result in search_results]
-                self.milvus_client.delete(
-                    collection_name=self.collection_name,
-                    ids=ids_to_delete
-                )
-                print(f"Removed {len(ids_to_delete)} chunks from {file_path}")
-                
-        except Exception as e:
-            print(f"Error removing document {file_path}: {e}")
-    
-    def search(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """搜索知识库"""
-        try:
-            # 先检查 collection 是否存在
-            if not self.milvus_client.has_collection(self.collection_name):
-                print(f"Collection {self.collection_name} does not exist, returning empty results")
-                return []
-            
-            query_embedding = self.processor.llm.embed(query)
-            if not query_embedding:
-                return []
-            
-            search_results = self.milvus_client.search(
-                collection_name=self.collection_name,
-                anns_field="vector", 
-                data=[query_embedding],
-                limit=limit,
-                search_params={"params": {"ef": 10}},
-                output_fields=["text", "source", "element_type", "metadata", "timestamp"]
-            )
-            
-            results = []
-            for res in search_results[0]:
-                results.append({
-                    "text": res["entity"]["text"],
-                    "source": res["entity"]["source"],
-                    "element_type": res["entity"]["element_type"],
-                    "metadata": res["entity"]["metadata"] if res["entity"]["metadata"] else {},
-                    "timestamp": res["entity"]["timestamp"],
-                    "score": res["distance"]
-                })
-            
-            return results
-            
-        except Exception as e:
-            print(f"Error searching: {e}")
-            return []
-    
-    def drop_collection(self, collection_name: Optional[str] = None):
-        """删除指定的 collection
-        
-        Args:
-            collection_name: 要删除的 collection 名称，如果为 None 则删除当前实例的 collection
-        """
-        target_collection = collection_name or self.collection_name
-        try:
-            if self.milvus_client.has_collection(target_collection):
-                self.milvus_client.drop_collection(target_collection)
-                print(f"Collection {target_collection} has been dropped")
-                return True
-            else:
-                print(f"Collection {target_collection} does not exist")
-                return False
-        except Exception as e:
-            print(f"Error dropping collection {target_collection}: {e}")
-            return False
-    
-    def scan_directory(self, directory: str):
-        """扫描目录并添加所有文档"""
-        supported_extensions = {'.pdf', '.md', '.txt', '.docx', '.html'}
-        
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if Path(file).suffix.lower() in supported_extensions:
-                    file_path = os.path.join(root, file)
-                    print(f"Processing {file_path}")
-                    self.add_document(file_path)
+    return sanitized
 
 
-class DocumentWatcher(FileSystemEventHandler):
-    def __init__(self, knowledge_base: KnowledgeBase):
-        self.knowledge_base = knowledge_base
-        self.supported_extensions = {'.pdf', '.md', '.txt', '.docx', '.html'}
-    
-    def on_created(self, event):
-        if not event.is_directory and Path(event.src_path).suffix.lower() in self.supported_extensions:
-            print(f"New file detected: {event.src_path}")
-            self.knowledge_base.add_document(event.src_path)
-    
-    def on_modified(self, event):
-        if not event.is_directory and Path(event.src_path).suffix.lower() in self.supported_extensions:
-            print(f"File modified: {event.src_path}")
-            self.knowledge_base.add_document(event.src_path)
-    
-    def on_deleted(self, event):
-        if not event.is_directory and Path(event.src_path).suffix.lower() in self.supported_extensions:
-            print(f"File deleted: {event.src_path}")
-            self.knowledge_base._remove_document(event.src_path)
+def element_to_chunk(element: Any, file_path: str, index: int) -> Optional[DocumentChunk]:
+    """将 element 转换为文档块 - 纯函数"""
+    if not (hasattr(element, 'text') and element.text.strip()):
+        return None
+
+    metadata = {}
+    if hasattr(element, 'metadata'):
+        metadata = element.metadata.to_dict()
+
+    return DocumentChunk(
+        id=f"{Path(file_path).stem}_{index}",
+        text=element.text,
+        source=file_path,
+        element_type=str(type(element).__name__),
+        metadata=sanitize_metadata(metadata)
+    )
 
 
-def start_document_monitor(documents_dir: str = "documents"):
-    """启动文档监控服务"""
-    kb = KnowledgeBase()
-    
-    # 初始扫描
-    if os.path.exists(documents_dir):
-        print(f"Initial scan of {documents_dir}")
-        kb.scan_directory(documents_dir)
-    
-    # 启动监控
-    event_handler = DocumentWatcher(kb)
-    observer = Observer()
-    observer.schedule(event_handler, documents_dir, recursive=True)
-    observer.start()
-    
-    print(f"Started monitoring {documents_dir}")
-    
+def elements_to_chunks(elements: List[Any], file_path: str) -> List[DocumentChunk]:
+    """将 elements 列表转换为文档块列表 - 纯函数"""
+    chunks = []
+    for i, element in enumerate(elements):
+        chunk = element_to_chunk(element, file_path, i)
+        if chunk:
+            chunks.append(chunk)
+    return chunks
+
+
+def chunk_to_milvus_data(
+    chunk: DocumentChunk,
+    embedding: List[float]
+) -> Dict[str, Any]:
+    """将文档块转换为 Milvus 数据格式 - 纯函数"""
+    return {
+        "vector": embedding,
+        "text": chunk.text,
+        "source": chunk.source,
+        "element_type": chunk.element_type,
+        "metadata": chunk.metadata,
+        "timestamp": datetime.now().isoformat(),
+        "chunk_id": chunk.id
+    }
+
+
+def search_result_to_dict(result: Dict[str, Any]) -> SearchResult:
+    """将 Milvus 搜索结果转换为 SearchResult - 纯函数"""
+    entity = result["entity"]
+    return SearchResult(
+        text=entity["text"],
+        source=entity["source"],
+        element_type=entity["element_type"],
+        metadata=entity.get("metadata", {}),
+        timestamp=entity["timestamp"],
+        score=result["distance"]
+    )
+
+
+# ============================================================================
+# 副作用函数 - 文档处理
+# ============================================================================
+
+def process_pdf_document(file_path: str, config: ProcessingConfig) -> List[Any]:
+    """处理 PDF 文档 - 副作用（读取文件）"""
+    return partition_pdf(
+        filename=file_path,
+        languages=list(config.pdf_languages),
+        strategy=config.pdf_strategy,
+        extract_images=False,
+        infer_table_structure=True,
+        ocr_mode="entire_page",
+        extract_image_block_to_payload=False,
+    )
+
+
+def process_md_document(file_path: str, config: ProcessingConfig) -> List[Any]:
+    """处理 Markdown 文档 - 副作用（读取文件）"""
+    return partition_md(
+        filename=file_path,
+        encoding="utf-8",
+        languages=list(config.pdf_languages),
+        chunking_strategy="by_title",
+        max_characters=config.md_max_characters,
+        new_after_n_chars=config.md_new_after_n_chars,
+    )
+
+
+def process_generic_document(file_path: str) -> List[Any]:
+    """处理通用文档 - 副作用（读取文件）"""
+    return partition(filename=file_path)
+
+
+def parse_document(file_path: str, config: ProcessingConfig) -> List[Any]:
+    """解析文档 - 副作用（读取文件）"""
     try:
-        while True:
-            asyncio.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-        print("Stopped document monitoring")
-    
-    observer.join()
-    return kb
+        if file_path.lower().endswith(".pdf"):
+            print("使用partition_pdf")
+            return process_pdf_document(file_path, config)
+        elif file_path.lower().endswith(".md"):
+            print("使用partition_md")
+            return process_md_document(file_path, config)
+        else:
+            print("使用通用的partition")
+            return process_generic_document(file_path)
+    except Exception as e:
+        print(f"Error processing {file_path}: {e}")
+        return []
 
+
+def process_document(file_path: str, config: ProcessingConfig) -> List[DocumentChunk]:
+    """
+    处理文档并返回文档块列表
+    副作用函数：读取文件
+    """
+    elements = parse_document(file_path, config)
+    return elements_to_chunks(elements, file_path)
+
+
+# ============================================================================
+# 副作用函数 - 嵌入生成
+# ============================================================================
+
+def embed_chunk(
+    chunk: DocumentChunk,
+    llm_config: LLMConfig
+) -> Optional[EmbeddedChunk]:
+    """
+    为文档块生成嵌入
+    副作用函数：调用 LLM API
+    """
+    result = embed_text(llm_config, chunk.text)
+
+    if result.is_success and result.embedding:
+        return EmbeddedChunk(chunk=chunk, embedding=result.embedding)
+    else:
+        print(f"Failed to embed chunk {chunk.id}: {result.error}")
+        return None
+
+
+def embed_chunks(
+    chunks: List[DocumentChunk],
+    llm_config: LLMConfig
+) -> List[EmbeddedChunk]:
+    """
+    为文档块列表生成嵌入
+    副作用函数：调用 LLM API
+    """
+    embedded = []
+    for chunk in chunks:
+        embedded_chunk = embed_chunk(chunk, llm_config)
+        if embedded_chunk:
+            embedded.append(embedded_chunk)
+    return embedded
+
+
+# ============================================================================
+# 副作用函数 - Milvus 数据库操作
+# ============================================================================
+
+def create_test_embedding(llm_config: LLMConfig) -> List[float]:
+    """创建测试嵌入以获取维度 - 副作用（调用 API）"""
+    result = embed_text(llm_config, "test")
+    if result.is_success:
+        return result.embedding
+    else:
+        raise RuntimeError(f"Failed to create test embedding: {result.error}")
+
+
+def initialize_collection(
+    client: MilvusClient,
+    config: CollectionConfig,
+    llm_config: LLMConfig
+) -> None:
+    """
+    初始化 Milvus 集合
+    副作用函数：创建数据库集合
+    """
+    if client.has_collection(config.collection_name):
+        print(f"Collection {config.collection_name} already exists")
+        return
+
+    # 获取嵌入维度
+    test_embedding = create_test_embedding(llm_config)
+    dimension = len(test_embedding)
+
+    # 定义 Schema
+    schema = MilvusClient.create_schema(auto_id=True, enable_dynamic_field=True)
+    schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+    schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dimension)
+    schema.add_field(field_name="source", datatype=DataType.VARCHAR, max_length=512)
+
+    # 定义 Index
+    index_params = MilvusClient.prepare_index_params()
+    index_params.add_index(
+        field_name="vector",
+        index_type=config.index_type,
+        index_name="vector_index",
+        metric_type=config.metric_type,
+        params={
+            "M": config.m,
+            "efConstruction": config.ef_construction
+        }
+    )
+
+    # 创建集合
+    client.create_collection(
+        collection_name=config.collection_name,
+        schema=schema,
+        index_params=index_params,
+        consistency_level="Bounded"
+    )
+
+    # 加载集合到内存
+    client.load_collection(collection_name=config.collection_name)
+    print(f"创建collection: {config.collection_name}")
+
+
+def insert_embedded_chunks(
+    client: MilvusClient,
+    collection_name: str,
+    embedded_chunks: List[EmbeddedChunk]
+) -> int:
+    """
+    插入嵌入文档块到 Milvus
+    副作用函数：写入数据库
+    返回插入的数量
+    """
+    if not embedded_chunks:
+        return 0
+
+    data = [
+        chunk_to_milvus_data(ec.chunk, ec.embedding)
+        for ec in embedded_chunks
+    ]
+
+    client.insert(collection_name=collection_name, data=data)
+    return len(data)
+
+
+def remove_document_from_collection(
+    client: MilvusClient,
+    collection_name: str,
+    file_path: str
+) -> int:
+    """
+    从集合中删除指定文档的所有块
+    副作用函数：删除数据库记录
+    返回删除的数量
+    """
+    try:
+        if not client.has_collection(collection_name):
+            print(f"Collection {collection_name} does not exist")
+            return 0
+
+        # 查找该文件的所有记录
+        search_results = client.query(
+            collection_name=collection_name,
+            filter=f'source == "{file_path}"',
+            output_fields=["id"]
+        )
+
+        if search_results:
+            ids_to_delete = [result["id"] for result in search_results]
+            client.delete(
+                collection_name=collection_name,
+                ids=ids_to_delete
+            )
+            print(f"Removed {len(ids_to_delete)} chunks from {file_path}")
+            return len(ids_to_delete)
+
+        return 0
+
+    except Exception as e:
+        print(f"Error removing document {file_path}: {e}")
+        return 0
+
+
+def search_collection(
+    client: MilvusClient,
+    collection_name: str,
+    query_embedding: List[float],
+    limit: int = 5
+) -> List[SearchResult]:
+    """
+    搜索集合
+    副作用函数：查询数据库
+    """
+    try:
+        if not client.has_collection(collection_name):
+            print(f"Collection {collection_name} does not exist")
+            return []
+
+        search_results = client.search(
+            collection_name=collection_name,
+            anns_field="vector",
+            data=[query_embedding],
+            limit=limit,
+            search_params={"params": {"ef": 10}},
+            output_fields=["text", "source", "element_type", "metadata", "timestamp"]
+        )
+
+        return [search_result_to_dict(res) for res in search_results[0]]
+
+    except Exception as e:
+        print(f"Error searching: {e}")
+        return []
+
+
+def drop_collection(client: MilvusClient, collection_name: str) -> bool:
+    """
+    删除集合
+    副作用函数：删除数据库集合
+    """
+    try:
+        if client.has_collection(collection_name):
+            client.drop_collection(collection_name)
+            print(f"Collection {collection_name} has been dropped")
+            return True
+        else:
+            print(f"Collection {collection_name} does not exist")
+            return False
+    except Exception as e:
+        print(f"Error dropping collection {collection_name}: {e}")
+        return False
+
+
+# ============================================================================
+# 高级函数 - 组合多个操作
+# ============================================================================
+
+def add_document_to_kb(
+    client: MilvusClient,
+    collection_name: str,
+    file_path: str,
+    llm_config: LLMConfig,
+    processing_config: ProcessingConfig,
+    file_hashes: Dict[str, str]
+) -> Tuple[bool, Dict[str, str]]:
+    """
+    添加文档到知识库
+    副作用函数：组合多个操作
+    返回 (是否成功, 更新后的哈希字典)
+    """
+    try:
+        # 检查文件是否变更
+        if not file_has_changed(file_path, file_hashes):
+            print(f"File {file_path} unchanged, skipping")
+            return (False, file_hashes)
+
+        # 处理文档
+        chunks = process_document(file_path, processing_config)
+        if not chunks:
+            print(f"No chunks extracted from {file_path}")
+            return (False, file_hashes)
+
+        # 删除旧记录
+        remove_document_from_collection(client, collection_name, file_path)
+
+        # 生成嵌入
+        embedded_chunks = embed_chunks(chunks, llm_config)
+        if not embedded_chunks:
+            print(f"No embeddings generated for {file_path}")
+            return (False, file_hashes)
+
+        # 插入数据
+        count = insert_embedded_chunks(client, collection_name, embedded_chunks)
+
+        # 更新哈希
+        new_hashes = update_file_hash(file_path, file_hashes)
+
+        print(f"Added {count} chunks from {file_path}")
+        return (True, new_hashes)
+
+    except Exception as e:
+        print(f"Error adding document {file_path}: {e}")
+        return (False, file_hashes)
+
+
+def search_kb(
+    client: MilvusClient,
+    collection_name: str,
+    query: str,
+    llm_config: LLMConfig,
+    limit: int = 5
+) -> List[SearchResult]:
+    """
+    搜索知识库
+    副作用函数：组合查询操作
+    """
+    # 生成查询嵌入
+    result = embed_text(llm_config, query)
+
+    if not result.is_success or not result.embedding:
+        print(f"Failed to embed query: {result.error}")
+        return []
+
+    # 搜索
+    return search_collection(client, collection_name, result.embedding, limit)
+
+
+def scan_and_add_directory(
+    client: MilvusClient,
+    collection_name: str,
+    directory: str,
+    llm_config: LLMConfig,
+    processing_config: ProcessingConfig,
+    file_hashes: Dict[str, str]
+) -> Dict[str, str]:
+    """
+    扫描目录并添加所有文档
+    副作用函数：批量处理文档
+    返回更新后的哈希字典
+    """
+    files = collect_files_in_directory(directory, processing_config)
+
+    current_hashes = file_hashes
+    for file_path in files:
+        print(f"Processing {file_path}")
+        success, new_hashes = add_document_to_kb(
+            client,
+            collection_name,
+            file_path,
+            llm_config,
+            processing_config,
+            current_hashes
+        )
+        current_hashes = new_hashes
+
+    return current_hashes
+
+
+# ============================================================================
+# 便捷函数 - 创建预配置的函数
+# ============================================================================
+
+def create_kb_context(
+    milvus_uri: str = "../milvus_demo.db",
+    collection_name: str = "finance_knowledge",
+    model: str = 'qwen3:0.6b',
+    embed_model: str = 'qwen3-embedding:0.6b'
+) -> Tuple[MilvusClient, CollectionConfig, LLMConfig, ProcessingConfig]:
+    """
+    创建知识库上下文
+    返回所有必要的配置和客户端
+    """
+    # 创建客户端
+    client = MilvusClient(uri=milvus_uri)
+
+    # 创建配置
+    collection_config = CollectionConfig(
+        milvus_uri=milvus_uri,
+        collection_name=collection_name
+    )
+
+    llm_config = create_config(model=model, embed_model=embed_model)
+
+    processing_config = ProcessingConfig()
+
+    # 初始化集合
+    initialize_collection(client, collection_config, llm_config)
+
+    return (client, collection_config, llm_config, processing_config)
+
+
+def create_add_document_function(
+    client: MilvusClient,
+    collection_name: str,
+    llm_config: LLMConfig,
+    processing_config: ProcessingConfig
+) -> Callable:
+    """创建预配置的添加文档函数"""
+    return partial(
+        add_document_to_kb,
+        client=client,
+        collection_name=collection_name,
+        llm_config=llm_config,
+        processing_config=processing_config
+    )
+
+
+def create_search_function(
+    client: MilvusClient,
+    collection_name: str,
+    llm_config: LLMConfig
+) -> Callable:
+    """创建预配置的搜索函数"""
+    return partial(
+        search_kb,
+        client=client,
+        collection_name=collection_name,
+        llm_config=llm_config
+    )
+
+
+# ============================================================================
+# 使用示例
+# ============================================================================
 
 if __name__ == "__main__":
-    kb = start_document_monitor()
+    root_dir = "/Users/ruijie/Documents/git/my_silicon_brain/"
+    # 创建知识库上下文
+    client, coll_config, llm_config, proc_config = create_kb_context(
+        milvus_uri= root_dir + "milvus_demo.db",
+        collection_name="finance_knowledge_functional"
+    )
+
+    # 加载文件哈希
+    file_hashes = load_file_hashes()
+
+    # 扫描并添加文档
+    documents_dir = root_dir + "documents"
+    if os.path.exists(documents_dir):
+        print(f"扫描目录: {documents_dir}")
+        file_hashes = scan_and_add_directory(
+            client,
+            coll_config.collection_name,
+            documents_dir,
+            llm_config,
+            proc_config,
+            file_hashes
+        )
+
+        # 保存哈希
+        save_file_hashes(file_hashes)
+
+    # 测试搜索
+    print("\n测试搜索:")
+    queries = [
+        "今年国庆节消费怎么样？",
+        "4月关税对中国股市的冲击?"
+    ]
+
+    for query in queries:
+        print(f"\n查询: {query}")
+        results = search_kb(
+            client,
+            coll_config.collection_name,
+            query,
+            llm_config,
+            limit=2
+        )
+
+        for i, result in enumerate(results, 1):
+            print(f"  {i}. {result.text[:100]}... (相关度: {result.score:.3f})")
