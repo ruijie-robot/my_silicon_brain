@@ -20,18 +20,9 @@ from pymilvus import MilvusClient, DataType, Collection, utility, connections
 @dataclass(frozen=True)
 class MilvusConfig:
     """Milvus 连接配置"""
-    uri: str = "./milvus_demo.db"
+    uri: str = "../milvus_demo.db"
     alias: str = "default"
 
-
-@dataclass(frozen=True)
-class CollectionInfo:
-    """Collection 信息"""
-    name: str
-    description: str
-    num_entities: int
-    schema: Dict[str, Any]
-    index_info: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -113,27 +104,9 @@ def create_client(config: MilvusConfig) -> MilvusClient:
     return MilvusClient(uri=config.uri)
 
 
-def check_connection(client: MilvusClient) -> bool:
-    """检查连接状态 - 副作用（网络请求）"""
-    try:
-        # 尝试列出 collections 来验证连接
-        client.list_collections()
-        return True
-    except Exception:
-        return False
-
-
 # ============================================================================
 # Collection 操作
 # ============================================================================
-
-def list_collections(client: MilvusClient) -> List[str]:
-    """列出所有 collections - 副作用（查询数据库）"""
-    try:
-        return client.list_collections()
-    except Exception as e:
-        print(f"Error listing collections: {e}")
-        return []
 
 
 def has_collection(client: MilvusClient, collection_name: str) -> bool:
@@ -164,12 +137,10 @@ def describe_collection(client: MilvusClient, collection_name: str) -> Dict[str,
         return {}
 
 
-def create_simple_collection(
+def create_HNSW_collection(
     client: MilvusClient,
     collection_name: str,
-    dimension: int,
-    metric_type: str = "COSINE",
-    index_type: str = "HNSW"
+    dimension: int
 ) -> OperationResult:
     """
     创建简单的 collection
@@ -207,10 +178,10 @@ def create_simple_collection(
         index_params = MilvusClient.prepare_index_params()
         index_params.add_index(
             field_name="vector",
-            index_type=index_type,
-            metric_type=metric_type,
+            index_type="HNSW",
+            metric_type="COSINE",
             index_name="vector_index",
-            params={"M": 64, "efConstruction": 100} if index_type == "HNSW" else {}
+            params={"M": 64, "efConstruction": 100}
         )
 
         # 创建 collection
@@ -265,47 +236,6 @@ def drop_collection(client: MilvusClient, collection_name: str) -> OperationResu
             error=str(e)
         )
 
-
-def load_collection(client: MilvusClient, collection_name: str) -> OperationResult:
-    """
-    加载 collection 到内存
-    副作用（修改数据库状态）
-    """
-    try:
-        client.load_collection(collection_name)
-
-        return OperationResult(
-            success=True,
-            message=f"Collection {collection_name} loaded successfully"
-        )
-
-    except Exception as e:
-        return OperationResult(
-            success=False,
-            message="Failed to load collection",
-            error=str(e)
-        )
-
-
-def release_collection(client: MilvusClient, collection_name: str) -> OperationResult:
-    """
-    从内存中释放 collection
-    副作用（修改数据库状态）
-    """
-    try:
-        client.release_collection(collection_name)
-
-        return OperationResult(
-            success=True,
-            message=f"Collection {collection_name} released successfully"
-        )
-
-    except Exception as e:
-        return OperationResult(
-            success=False,
-            message="Failed to release collection",
-            error=str(e)
-        )
 
 
 # ============================================================================
@@ -527,7 +457,7 @@ def delete_data(
 # 便捷函数
 # ============================================================================
 
-def get_collection_info(client: MilvusClient, collection_name: str) -> CollectionInfo:
+def print_collection_info(client: MilvusClient, collection_name: str):
     """
     获取完整的 collection 信息
     副作用（查询数据库）
@@ -539,30 +469,22 @@ def get_collection_info(client: MilvusClient, collection_name: str) -> Collectio
         desc = describe_collection(client, collection_name)
         stats = get_collection_stats(client, collection_name)
 
-        return CollectionInfo(
-            name=collection_name,
-            description=desc.get("description", ""),
-            num_entities=stats.get("row_count", 0),
-            schema=desc.get("schema", {}),
-            index_info=desc.get("indexes", [])
-        )
+        print(f"\nCollection 信息:")
+        print(f"  name: {collection_name}")
+        print(f"  row count: {stats.get("row_count")}")
+        print(f"  index: {desc.get("indexes", [])}")
+        print(f"  desp: {desc.get("description", "")}")
 
     except Exception as e:
         print(f"Error getting collection info: {e}")
-        return CollectionInfo(
-            name=collection_name,
-            description="Error",
-            num_entities=0,
-            schema={}
-        )
 
 
-def print_all_collections(client: MilvusClient) -> None:
+def list_collections(client: MilvusClient) -> None:
     """
     打印所有 collections 的信息
     副作用（查询数据库 + 输出）
     """
-    collections = list_collections(client)
+    collections = client.list_collections()
 
     if not collections:
         print("No collections found")
@@ -576,8 +498,8 @@ def print_all_collections(client: MilvusClient) -> None:
         try:
             stats = get_collection_stats(client, coll_name)
             row_count = stats.get("row_count", 0)
-            print(f"📦 {coll_name}")
-            print(f"   └─ Entities: {row_count:,}")
+            print(f"📦collection_name: {coll_name}")
+            print(f"   └─ row_count: {row_count:,}")
             print()
         except Exception as e:
             print(f"📦 {coll_name}")
@@ -585,169 +507,13 @@ def print_all_collections(client: MilvusClient) -> None:
             print()
 
 
-def backup_collection_data(
-    client: MilvusClient,
-    collection_name: str,
-    output_file: str,
-    batch_size: int = 1000
-) -> OperationResult:
-    """
-    备份 collection 数据到 JSON 文件
-    副作用（查询数据库 + 写入文件）
-
-    Args:
-        client: Milvus 客户端
-        collection_name: collection 名称
-        output_file: 输出文件路径
-        batch_size: 批次大小
-
-    Returns:
-        OperationResult: 操作结果
-    """
-    try:
-        if not has_collection(client, collection_name):
-            return OperationResult(
-                success=False,
-                message=f"Collection {collection_name} does not exist",
-                error="Collection not found"
-            )
-
-        # 查询所有数据
-        all_data = []
-        offset = 0
-
-        while True:
-            result = query_data(
-                client,
-                collection_name,
-                filter_expr="id >= 0",
-                limit=batch_size
-            )
-
-            if not result.success or not result.data:
-                break
-
-            all_data.extend(result.data)
-            offset += batch_size
-
-            if len(result.data) < batch_size:
-                break
-
-        # 保存到文件
-        backup_data = {
-            "collection_name": collection_name,
-            "timestamp": datetime.now().isoformat(),
-            "count": len(all_data),
-            "data": all_data
-        }
-
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(backup_data, f, indent=2, ensure_ascii=False)
-
-        return OperationResult(
-            success=True,
-            message=f"Backed up {len(all_data)} records to {output_file}",
-            data={"count": len(all_data), "file": output_file}
-        )
-
-    except Exception as e:
-        return OperationResult(
-            success=False,
-            message="Failed to backup collection",
-            error=str(e)
-        )
-
 
 # ============================================================================
 # 主函数示例
 # ============================================================================
 
 def main():
-    """演示 Milvus 工具的使用"""
-
-    print("="*60)
-    print("Milvus Database Tool - Demo")
-    print("="*60)
-
-    # 创建配置和客户端
-    config = MilvusConfig(uri="./milvus_demo.db")
-    client = create_client(config)
-
-    # 检查连接
-    if check_connection(client):
-        print("✅ Connected to Milvus\n")
-    else:
-        print("❌ Failed to connect to Milvus\n")
-        return
-
-    # 列出所有 collections
-    print_all_collections(client)
-
-    # 示例：创建一个新的 collection
-    test_collection = "test_collection_demo"
-
-    print(f"\n{'='*60}")
-    print(f"Creating test collection: {test_collection}")
-    print(f"{'='*60}\n")
-
-    result = create_simple_collection(
-        client,
-        collection_name=test_collection,
-        dimension=128,
-        metric_type="COSINE",
-        index_type="HNSW"
-    )
-
-    print(f"Result: {result.message}")
-
-    if result.success:
-        # 插入测试数据
-        import random
-
-        test_data = [
-            {
-                "vector": [random.random() for _ in range(128)],
-                "text": f"This is test document {i}",
-                "metadata": {"doc_id": i}
-            }
-            for i in range(10)
-        ]
-
-        print(f"\nInserting {len(test_data)} test records...")
-        insert_result = insert_data(client, test_collection, test_data)
-        print(f"Result: {insert_result.message}")
-
-        # 查询数据
-        print("\nQuerying data...")
-        query_result = query_data(
-            client,
-            test_collection,
-            filter_expr="id >= 0",
-            limit=5
-        )
-        print(f"Result: {query_result.message}")
-        if query_result.data:
-            print(f"Sample record: {query_result.data[0]}")
-
-        # 向量搜索
-        print("\nPerforming vector search...")
-        query_vector = [random.random() for _ in range(128)]
-        search_result = search_vectors(
-            client,
-            test_collection,
-            query_vectors=[query_vector],
-            limit=3
-        )
-        print(f"Result: {search_result.message}")
-
-        # 删除 collection
-        print(f"\nCleaning up: dropping {test_collection}...")
-        drop_result = drop_collection(client, test_collection)
-        print(f"Result: {drop_result.message}")
-
-    print(f"\n{'='*60}")
-    print("Demo completed")
-    print(f"{'='*60}\n")
+    print("start")
 
 
 if __name__ == "__main__":
