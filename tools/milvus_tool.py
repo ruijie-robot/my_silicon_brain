@@ -44,67 +44,6 @@ class OperationResult:
 
 
 # ============================================================================
-# 纯函数 - 数据转换
-# ============================================================================
-
-def format_collection_info(collection_name: str, stats: Dict[str, Any]) -> str:
-    """格式化 collection 信息 - 纯函数"""
-    info = [
-        f"Collection: {collection_name}",
-        f"Entity Count: {stats.get('row_count', 0)}",
-    ]
-    return "\n".join(info)
-
-
-def format_search_results(results: List[Dict[str, Any]], limit: int = 10) -> str:
-    """格式化搜索结果 - 纯函数"""
-    if not results:
-        return "No results found"
-
-    output = []
-    for i, result in enumerate(results[:limit], 1):
-        score = result.get('distance', 0)
-        text = result.get('entity', {}).get('text', '')[:100]
-        output.append(f"{i}. Score: {score:.4f} | Text: {text}...")
-
-    return "\n".join(output)
-
-
-def create_schema_field(
-    field_name: str,
-    datatype: DataType,
-    is_primary: bool = False,
-    auto_id: bool = False,
-    max_length: Optional[int] = None,
-    dim: Optional[int] = None
-) -> Dict[str, Any]:
-    """创建 schema 字段定义 - 纯函数"""
-    field_def = {
-        "field_name": field_name,
-        "datatype": datatype,
-        "is_primary": is_primary,
-        "auto_id": auto_id
-    }
-
-    if max_length is not None:
-        field_def["max_length"] = max_length
-
-    if dim is not None:
-        field_def["dim"] = dim
-
-    return field_def
-
-
-# ============================================================================
-# 连接管理
-# ============================================================================
-
-def create_client(config: MilvusConfig) -> MilvusClient:
-    """创建 Milvus 客户端 - 副作用（创建连接）"""
-    return MilvusClient(uri=config.uri)
-
-
-# ============================================================================
 # Collection 操作
 # ============================================================================
 
@@ -117,24 +56,6 @@ def has_collection(client: MilvusClient, collection_name: str) -> bool:
         print(f"Error checking collection: {e}")
         return False
 
-
-def get_collection_stats(client: MilvusClient, collection_name: str) -> Dict[str, Any]:
-    """获取 collection 统计信息 - 副作用（查询数据库）"""
-    try:
-        stats = client.get_collection_stats(collection_name)
-        return stats
-    except Exception as e:
-        print(f"Error getting collection stats: {e}")
-        return {}
-
-
-def describe_collection(client: MilvusClient, collection_name: str) -> Dict[str, Any]:
-    """描述 collection - 副作用（查询数据库）"""
-    try:
-        return client.describe_collection(collection_name)
-    except Exception as e:
-        print(f"Error describing collection: {e}")
-        return {}
 
 
 def create_HNSW_collection(
@@ -466,8 +387,8 @@ def print_collection_info(client: MilvusClient, collection_name: str):
         if not has_collection(client, collection_name):
             raise ValueError(f"Collection {collection_name} does not exist")
 
-        desc = describe_collection(client, collection_name)
-        stats = get_collection_stats(client, collection_name)
+        desc = client.describe_collection(collection_name)
+        stats = client.get_collection_stats(collection_name)
 
         print(f"\nCollection 信息:")
         print(f"  name: {collection_name}")
