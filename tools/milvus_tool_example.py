@@ -3,10 +3,9 @@
 Milvus 工具使用示例
 展示常见的数据库操作场景
 """
-
+from pymilvus import MilvusClient
 from milvus_tool import (
     MilvusConfig,
-    create_client,
     list_collections, # ok
     print_collection_info, #ok
     create_HNSW_collection, # ok
@@ -20,7 +19,7 @@ import random
 
 
 
-def insert_and_query(config, client, collection_name):
+def insert_and_query(client, collection_name):
     # 1. 准备数据
     documents = [
         {
@@ -148,7 +147,7 @@ def main():
     """运行所有示例"""
     # 1. 创建客户端
     config = MilvusConfig(uri="../milvus_demo.db")
-    client = create_client(config)
+    client = MilvusClient(uri=config.uri)
     collection_name = "test"
 
     try:
@@ -167,7 +166,7 @@ def main():
         )
         print(f"结果: {result.message}")
 
-        insert_and_query(config, client, collection_name)
+        insert_and_query(client, collection_name)
 
 
         vector_search(client, collection_name)

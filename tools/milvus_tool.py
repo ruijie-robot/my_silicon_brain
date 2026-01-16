@@ -378,6 +378,30 @@ def delete_data(
 # 便捷函数
 # ============================================================================
 
+def create_client(config: Optional[MilvusConfig] = None) -> MilvusClient:
+    """
+    创建 Milvus 客户端 - 便捷函数
+    
+    Args:
+        config: Milvus 配置，如果为 None 则使用默认配置
+    
+    Returns:
+        MilvusClient: Milvus 客户端实例
+    
+    Example:
+        >>> # 使用默认配置
+        >>> client = create_client()
+        
+        >>> # 使用自定义配置
+        >>> config = MilvusConfig(uri="./my_db.db")
+        >>> client = create_client(config)
+    """
+    if config is None:
+        config = MilvusConfig()
+    
+    return MilvusClient(uri=config.uri)
+
+
 def print_collection_info(client: MilvusClient, collection_name: str):
     """
     获取完整的 collection 信息
@@ -417,7 +441,7 @@ def list_collections(client: MilvusClient) -> None:
 
     for coll_name in collections:
         try:
-            stats = get_collection_stats(client, coll_name)
+            stats = client.get_collection_stats(coll_name)
             row_count = stats.get("row_count", 0)
             print(f"📦collection_name: {coll_name}")
             print(f"   └─ row_count: {row_count:,}")
